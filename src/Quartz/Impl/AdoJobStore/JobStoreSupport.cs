@@ -1143,6 +1143,38 @@ namespace Quartz.Impl.AdoJobStore
                     foreach (var pair in triggersAndJobs)
                     {
                         var job = pair.Key;
+
+                        // Get existing triggers for job
+                        var existingTriggers = await GetTriggersForJob(job.Key).ConfigureAwait(false);
+
+                        // If replace, delete existing all existing triggers for job
+                        if (replace)
+                        {
+                            foreach (var trigger in existingTriggers)
+                            {
+                                var deleteResult = await DeleteTriggerAndChildren(conn, trigger.Key, cancellationToken).ConfigureAwait(false);
+                            }
+                        }
+
+                        // If NOT replace, validate new triggers with existing triggers to ensure there are no duplicates
+                        if (!replace)
+                        {
+                            var existingTriggerDic = existingTriggers.ToDictionary(t => t.Key);
+
+                            foreach(var jobDetail in triggersAndJobs.Values)
+                            {
+                                foreach(var trigger in jobDetail)
+                                {
+                                    IOperableTrigger duplicateTrigger;
+
+                                    if (existingTriggerDic.TryGetValue(trigger.Key, out duplicateTrigger))
+                                    {
+                                        throw new ObjectAlreadyExistsException(duplicateTrigger);
+                                    }
+                                }
+                            }
+                        }
+
                         var triggers = pair.Value;
                         await StoreJob(conn, job, replace, cancellationToken).ConfigureAwait(false);
                         foreach (var trigger in triggers)
